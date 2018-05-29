@@ -1,161 +1,132 @@
 
+
 #ifndef F_CPU
 #define F_CPU 16000000UL
 #endif
 
+#include <string.h>
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
-#include <stdbool.h>
 #include <avr/wdt.h>
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
+
+//Start sonar stuff
 #define BAUD 9600
-#define MYUBBR (F_CPU/16/BAUD-1)
+#define MYUBRR (((F_CPU / (16UL * BAUD))) - 1)
+#define TRIGGER PB0
+#define GELUID PB1
 
-void wait(unsigned);
+#define RECEIVED_TRUE 1
+#define RECEIVED_FALSE 0
 
-#define nRxBuffer 10
+#define INSTR_PER_US 16												// instructions per microsecond (depends on MCU clock, 16MHz current)
+#define INSTR_PER_MS 16000											// instructions per millisecond (depends on MCU clock, 16MHz current)
+#define MAX_RESP_TIME_MS 200										// timeout - max time to wait for low voltage drop
+#define DELAY_BETWEEN_TESTS_MS 50									// echo cancelling time between sampling
 
-//pwm frequentie = clock/(2*prescalar*TOP)
-//16 bit timer phase correct
-//pre scalar 8
-// top 20000
-// 20000 = 20 ms
-// 900   = 0.9ms = 0 graden
-// 1500  = 1.5ms = 90 graden
-// 2100  = 2.1ms = 180 graden
+#define L_PLUS PC1
+#define L_MIN PD7
+#define L_EN PL5
 
-void turnServo(uint16_t degrees)
+#define R_PLUS PG1
+#define R_MIN PL7
+#define R_EN PL3
+#define SERVO_PIN PL1
+
+#define L_GELUID PA3
+#define R_GELUID PA1
+#define PIN_GELUID PINA
+
+
+void UART_Init( unsigned int ubrr );
+void UART_Transmit( unsigned char data );
+void UART_Transmit_String(const char *stringPtr);
+void turnServo(int degrees);
+void initServo();
+void addToBuffer(char x);
+
+char buffer[3];
+int index;
+
+using namespace std;
+
+int main()
 {
-	OCR1A = 20000 - ((degrees * 1200 / 180) + 900);
+	UART_Init(MYUBRR);
+	initServo();
+	sei();
+	UART_Transmit_String("Setup done");
+	while(1);
 }
 
-void usart_transmit(uint8_t data[], uint8_t length)
-{
-	for (uint8_t i = 0; i < length; i++)
-	{
-		//wait for empty transmit buffer
-		while (!(UCSR0A & (1 << UDRE0)));
-		UDR0 = data[i];
+void turnServo(int degrees){
+	OCR1B = 20000 - (degrees * (1300 / 180) + 800);
+}
+
+void addToBuffer(char x){
+	if(x=='\r'){
+		UART_Transmit('\n');
+		int temp;
+		temp = atoi (buffer);
+		turnServo(temp);
+		buffer[0] = '\0';
+		buffer[1] = '\0';
+		buffer[2] = '\0';
+		index=0;
+	}else{
+		buffer[index++]=x;
 	}
+	UART_Transmit(x);
 }
-void parseBuffer(uint8_t buffer[], uint8_t length)
+
+
+void UART_Transmit( unsigned char data )
 {
-	uint16_t angle = 0;
-	for (uint8_t i = length; i > 0; i--)
+	while ( !( UCSR0A & (1<<UDRE0)) ) {};							// Wait for empty transmit buffer
+	UDR0 = data;													// Put data into buffer, sends the data
+}
+
+void UART_Transmit_String(const char *stringPtr)
+{
+	while(*stringPtr != 0x00)
 	{
-		uint8_t temp = buffer[length - i] - 48;
-		for (uint8_t j = 0; j < i - 1; j++)
-		{
-			temp *= 10;
-		}
-		angle += temp;
+		UART_Transmit(*stringPtr);
+		stringPtr++;
 	}
 	
-	turnServo(angle);
-	uint8_t message[15] = "Turned servo: ";
-	usart_transmit(message, 15);
-	usart_transmit(buffer, length);
-	uint8_t message2[11] = " degrees.\n";
-	usart_transmit(message2, 11);
+	UART_Transmit('\n');
+	UART_Transmit('\r');
 }
 
-void addToRxBuffer(uint8_t data)
+void UART_Init( unsigned int ubrr)
 {
-	static int rxBufferIndex = 0;
-	static uint8_t rbuffer[nRxBuffer];
-	if (data == '\n')
-	{
-		parseBuffer(rbuffer, rxBufferIndex);
-		rxBufferIndex = 0;
-	}
-	else if (rxBufferIndex < nRxBuffer)
-	{
-		rbuffer[rxBufferIndex++] = data;
-	}
-	
-	if (rxBufferIndex == nRxBuffer)
-	{
-		parseBuffer(rbuffer, rxBufferIndex);
-		rxBufferIndex = 0;
-	}
-}
+	UBRR0H = (ubrr>>8);												// Set baud rate
+	UBRR0L = ubrr;
 
-void timer1_init()
-{
-	TCCR1A |= (1 << WGM11);
-	TCCR1B |= (1 << CS11) | (1 << WGM13);
-	// initialize counter
-	ICR1 = 20000;
-	OCR1A = 18500;
-	// enable overflow interrupt
-	TIMSK1 |= (1 << 1);
-	// enable global interrupts
-	sei();
-}
-
-// called whenever TCNT1 overflows
-ISR(TIMER1_COMPA_vect)
-{
-	PORTA ^= (1 << PA7);  // toggles the led
-}
-
-void initUSART(uint16_t ubbr)
-{
-	//set prescalar/baudrate
-	UBRR0H = (uint8_t) (ubbr >> 8);
-	UBRR0L = (uint8_t) ubbr;
-	//enable receiver and transmitter and enable interrupt
-	UCSR0B = (1 << RXEN0) | (1 << TXEN0) | (1 << RXCIE0);
-	//set frame format
-	UCSR0C = (1 << USBS0) | (3 << UCSZ00);
-}
-
-void initWatchDog()
-{
-	//disable interrupt
-	cli();
-	wdt_reset();
-	//start timed sequence
-	WDTCSR |= (1 << WDCE) | (1 << WDE);
-	//set prescaler and mode interrupt and system reset
-	WDTCSR = (1 << WDP0) | (1 << WDP3) | (1 << WDE) | (1 << WDIE);
-	sei();
-}
-
-
-int main() {
-	sei();
-	initUSART(MYUBBR);
-	uint8_t msg[9] = "reboot!\n";
-	usart_transmit(msg, 9);
-	initWatchDog();
-	timer1_init();
-	//set pin7 to output
-	DDRB = (1 << PB7);	
-	DDRA = (1 << PA7);
-
-	while (1)
-	{
-
-	}
-}
-
-void wait(unsigned a) {
-	while(a--)
-	_delay_ms(100);
+	UCSR0B = (1<<RXEN0) | (1<<TXEN0) | (1<<RXCIE0);					// Enable receiver and transmitter and enable RX interrupt
+	UCSR0C = (3<<UCSZ00);											// Set frame format: 8data, 1 stop bit
 }
 
 ISR(USART0_RX_vect)
 {
-	wdt_reset();
-	addToRxBuffer(UDR0);
+	addToBuffer(UDR0);
+	//UART_Transmit_String("interupt    ");
 }
 
-ISR(WDT_vect)
+
+void initServo()
 {
-	turnServo(90);
-	uint8_t message[21] = "Servo to save state\n";
-	usart_transmit(message, 20);
+	DDRB |= (1 << PB6);
+	TCCR1A = (1 << WGM11) | (1 << COM1B0) | (1 << COM1B1);
+	TCCR1B = (1 << WGM13) | (1 << CS11);
+	ICR1 = 20000;
+	TCNT1 = 0;
+	turnServo(0);
 }
-
