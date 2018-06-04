@@ -20,7 +20,13 @@
 //Start sonar stuff
 #define BAUD 9600
 #define MYUBRR (((F_CPU / (16UL * BAUD))) - 1)
-#define TRIGGER PB0
+#define TRIGGER PB0 // = digital 53
+#define INSTR_PER_US 16												// instructions per microsecond (depends on MCU clock, 16MHz current)
+#define INSTR_PER_MS 16000											// instructions per millisecond (depends on MCU clock, 16MHz current)
+#define MAX_RESP_TIME_MS 200										// timeout - max time to wait for low voltage drop
+#define DELAY_BETWEEN_TESTS_MS 50
+
+/*#define TRIGGER PB0
 #define GELUID PB1
 
 #define RECEIVED_TRUE 1
@@ -42,28 +48,63 @@
 
 #define L_GELUID PA3
 #define R_GELUID PA1
-#define PIN_GELUID PINA
+#define PIN_GELUID PINA*/
 
+//SERVO OP PB6 = DIGITAL 12
+//SONAR TRIGGER OP PB0 = DIGITAL 53
+//SONAR ECHO OP PB1 = DIGITAL 52
 
 void UART_Init( unsigned int ubrr );
 void UART_Transmit( unsigned char data );
 void UART_Transmit_String(const char *stringPtr);
+
+//SERVO
 void turnServo(int degrees);
 void initServo();
 void addToBuffer(char x);
 
-char buffer[3];
-int index;
+//ULTRASOON
+void INT1_init( void );
+void pulse( void );
+void timer1_init( void );
 
-using namespace std;
+char ontvang;														// Global variable to store received data
+//int state = RECEIVED_FALSE;
+char out[256];
+
+volatile uint8_t running = 0;										// State to see if the pulse has been sent.
+volatile uint8_t up = 0;
+volatile uint32_t timerCounter = 0;
+volatile unsigned long result = 0;
+
+char buffer[3];
+int ind;
+
+//using namespace std;
 
 int main()
 {
+	DDRB = (1 << TRIGGER);
+	DDRB |= (1 << PB7);
 	UART_Init(MYUBRR);
 	initServo();
+	INT1_init();
+	//wdt_enable(WDTO_2S);
+	timer1_init();
 	sei();
 	UART_Transmit_String("Setup done");
-	while(1);
+	while(1)
+	{
+		if(running == 0)
+		{
+			_delay_ms(DELAY_BETWEEN_TESTS_MS);
+			pulse();
+			sprintf(out, "Afstand = %dCM", result);
+			UART_Transmit_String(out);
+			if(result > 250) result = 250;
+			turnServo(result);
+		}
+	}
 }
 
 void turnServo(int degrees){
@@ -79,9 +120,9 @@ void addToBuffer(char x){
 		buffer[0] = '\0';
 		buffer[1] = '\0';
 		buffer[2] = '\0';
-		index=0;
+		ind=0;
 	}else{
-		buffer[index++]=x;
+		buffer[ind++]=x;
 	}
 	UART_Transmit(x);
 }
@@ -129,4 +170,67 @@ void initServo()
 	ICR1 = 20000;
 	TCNT1 = 0;
 	turnServo(0);
+}
+
+ void INT1_init()
+ {
+	 EICRA |= (1 << ISC10) | (0 << ISC11);							// set rising or falling edge on INT1
+	 EIMSK |= (1 << INT1);											// Enable INT1
+ }
+
+ ISR(INT1_vect)
+ {
+	PORTB |= (1 << PB7);
+	 if(running)														// check if the pulse has been sent
+	 {
+		 if(up == 0)													// voltage rise
+		 {
+			 up = 1;
+			 timerCounter = 0;
+			 TCNT1 = 0;
+		 }
+		 else														// faling edge
+		 {
+			 wdt_reset();
+			 up = 0;
+			 result = ((timerCounter * 65535 + TCNT1) / 58) / 2;
+			 running = 0;
+		 }
+	 }
+ }
+
+void pulse()
+{
+	PORTB &= ~(1 << TRIGGER);
+	_delay_us(1);
+
+
+	PORTB |= (1 << TRIGGER);										// zet trigger op 1
+	running = 1;
+	_delay_us(10);													// wacht 10 microseconden
+	PORTB &= ~(1 << TRIGGER);										// zet trigger op 0
+}
+
+void timer1_init()
+{
+	TCCR1B |= (0 << CS10) | (1 << CS11) | (0 << CS12);				// prescaler 0
+	TCNT1 = 0;														// init counter
+	TIMSK1 |= (1 << TOIE1);											// enable overflow interrupt
+}
+
+ISR(TIMER1_OVF_vect)
+{
+	if(up)
+	{
+		timerCounter++;
+		uint32_t ticks = timerCounter * 65535 + TCNT1;
+		uint32_t maxTicks = (uint32_t)MAX_RESP_TIME_MS * INSTR_PER_MS;
+		if(ticks > maxTicks)
+		{
+			up = 0;
+			running = 0;
+			result = -1;
+		}
+		
+	}
 }
