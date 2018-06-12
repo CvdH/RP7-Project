@@ -109,7 +109,7 @@
 		  }else{
 		  buffer[index++]=x;
 	  }
-	  UART_Transmit(x);
+	  //UART_Transmit(x);
   }
 
   void wait(unsigned int a)
@@ -186,9 +186,10 @@
 		  }
 		  else														// faling edge
 		  {
-			  wdt_reset();
 			  up = 0;
 			  result = ((timerCounter * 65535 + TCNT3) / 58) / 2;
+			  if(result != 0)
+				wdt_reset();
 			  running = 0;
 		  }
 	  }
