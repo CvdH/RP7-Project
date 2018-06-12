@@ -42,7 +42,7 @@
 
   void INT1_init( void );
   void pulse( void );
-  void timer1_init( void );
+  void timer3_init( void );
 
   char ontvang;														// Global variable to store received data
   int state = RECEIVED_FALSE;
@@ -60,7 +60,7 @@
 	  UART_Init(MYUBRR);
 	  INT1_init();
 	  wdt_enable(WDTO_2S);
-	  timer1_init();
+	  timer3_init();
 	  sei();
 
 	  // enable watchdog timer at 2 seconds
@@ -138,13 +138,13 @@
 		  {
 			  up = 1;
 			  timerCounter = 0;
-			  TCNT1 = 0;
+			  TCNT3 = 0;
 		  }
 		  else														// faling edge
 		  {
 			  wdt_reset();
 			  up = 0;
-			  result = ((timerCounter * 65535 + TCNT1) / 58) / 2;
+			  result = ((timerCounter * 65535 + TCNT3) / 58) / 2;
 			  running = 0;
 		  }
 	  }
@@ -162,19 +162,19 @@
   }
 
 
-  void timer1_init()
+  void timer3_init()
   {
-	  TCCR1B |= (0 << CS10) | (1 << CS11) | (0 << CS12);				// prescaler 0
-	  TCNT1 = 0;														// init counter
-	  TIMSK1 |= (1 << TOIE1);											// enable overflow interrupt
+	  TCCR3B |= (0 << CS30) | (1 << CS31) | (0 << CS32);				// prescaler 0
+	  TCNT3 = 0;														// init counter
+	  TIMSK3 |= (1 << TOIE3);											// enable overflow interrupt
   }
 
-  ISR(TIMER1_OVF_vect)
+  ISR(TIMER3_OVF_vect)
   {
 	  if(up)
 	  {
 		  timerCounter++;
-		  uint32_t ticks = timerCounter * 65535 + TCNT1;
+		  uint32_t ticks = timerCounter * 65535 + TCNT3;
 		  uint32_t maxTicks = (uint32_t)MAX_RESP_TIME_MS * INSTR_PER_MS;
 		  if(ticks > maxTicks)
 		  {
