@@ -13,10 +13,10 @@
 #define BAUD 9600
 #define MYUBRR (((F_CPU / (16UL * BAUD))) - 1)
 
-void UART_Init( unsigned int ubrr );
-void UART_Transmit( unsigned char data );
-void UART_Transmit_String(const char *stringPtr);
-void UART_Transmit_Integer(int16_t number, uint8_t base);
+void UART_Init();
+void UART_Transmit(char data );
+void UART_Transmit_String(char *stringPtr);
+void UART_Transmit_Integer(uint32_t number);
 
 void verzenden(uint8_t ad,uint8_t b);
 void ontvangen(uint8_t ad,uint8_t b[],uint8_t max);
@@ -25,15 +25,30 @@ void init_master();
 int main(void)
 {
 	PORTD = 0x03;
-	UART_Init(MYUBRR);
+	UART_Init();
 	init_master();
     /* Replace with your application code */
-	uint8_t data[16];
+	uint8_t data[2];
+	uint32_t waarde =0;
     while (1) 
     {
+	
+		verzenden(0x40, 0xE3);
+		ontvangen(0x40, data, 2);
+	
+		waarde = ((uint16_t)data[0]<<8) | data[1];
+	
+		UART_Transmit_String("temperatuur: ");
+		UART_Transmit_Integer(((175.72*waarde)/65536.0) -46.85);
+
 		verzenden(0x40, 0xE5);
 		ontvangen(0x40, data, 2);
-		//UART_Transmit_Integer(data[0],10);
+		
+		waarde = ((uint16_t)data[0]<<8) | data[1];
+		
+		UART_Transmit_String(" humidity: ");
+		UART_Transmit_Integer(((125*waarde)/65536.0) -6);
+		UART_Transmit_String("\n\r");
     }
 }
 
@@ -47,14 +62,14 @@ void init_master() {
 void ontvangen(uint8_t ad,uint8_t b[],uint8_t max) {
 	uint8_t op[15];
 	
-	UART_Transmit('a');
+//	UART_Transmit('a');
 
 	TWCR |= (1<<TWSTA);
 	while(!(TWCR & (1<<TWINT)));
 	op[0] = TWSR;
 
 	
-	UART_Transmit('b');
+	//UART_Transmit('b');
 
 	TWDR=(ad<<1)+1;
 	TWCR=(1<<TWINT)|(1<<TWEN);
@@ -115,41 +130,35 @@ void verzenden(uint8_t ad,uint8_t b) {
 	// writeString(" ");writeInteger(op[2],16);
 }
 
+void UART_Init() {
 
-void UART_Init( unsigned int ubrr)
-{
-	UBRR0H = (ubrr>>8);												// Set baud rate
-	UBRR0L = ubrr;
-
-	UCSR0B = (1<<RXEN0) | (1<<TXEN0) | (1<<RXCIE0);					// Enable receiver and transmitter and enable RX interrupt
-	UCSR0C = (3<<UCSZ00);											// Set frame format: 8data, 1 stop bit
+	UBRR0H = MYUBRR >> 8;
+	UBRR0L = (uint8_t) MYUBRR;
+	UCSR0A = 0x00;
+	UCSR0C = (1<<UCSZ01)|(1<<UCSZ00);
+	UCSR0B = (1 << TXEN0) | (1 << RXEN0);
 }
 
-void UART_Transmit( unsigned char data )
+void UART_Transmit(char ch)
 {
-	while ( !( UCSR0A & (1<<UDRE0)) ) {};							// Wait for empty transmit buffer
-	UDR0 = data;													// Put data into buffer, sends the data
+	while (!(UCSR0A & (1<<UDRE0)));
+	UDR0 = (uint8_t)ch;
 }
 
-void UART_Transmit_String(const char *stringPtr)
+void UART_Transmit_String(char *string)
 {
-	while(*stringPtr != 0x00)
-	{
-		UART_Transmit(*stringPtr);
-		stringPtr++;
-	}
-	
-	UART_Transmit('\n');
-	UART_Transmit('\r');
+	while(*string)
+	UART_Transmit(*string++);
 }
 
-
-void UART_Transmit_Integer(int16_t number, uint8_t base)
+void UART_Transmit_Integer(uint32_t number)
 {
 	char buffer[17];
-	itoa(number, &buffer[0], base);
+	itoa(number, &buffer[0], 10);
 	UART_Transmit_String(&buffer[0]);
 }
+
+
 
 // humidity in % = ((125*RH_CODE)/65536) -6;
 // tempratuur in C = ((175.72*Temp_code)/65536) -46.85;
