@@ -193,7 +193,7 @@ void motorTaak(){
 		/*if (xQueueReceive(motorCommand, &temp, 0)){
 			UART_Transmit(temp);*/
 			switch(ontvang){
-				case 'w':
+				case 'w': // VOORUIT
 					//currentSpeed = 0;
 					setSpeed(currentSpeed);
 					riding = true;
@@ -201,14 +201,14 @@ void motorTaak(){
 					motorStop();
 					motorVooruit();
 					break;
-				case 'a':
+				case 'a': // LINKS
 					riding = true;
 					turning = true;
 					//if(currentSpeed <= 50) setSpeed(50);
 					motorStop();
 					motorLinks();
 					break;
-				case 's':
+				case 's': // ACHTERUIT
 					//currentSpeed = 0;
 					setSpeed(currentSpeed);
 					riding = true;
@@ -216,28 +216,23 @@ void motorTaak(){
 					motorStop();
 					motorAchteruit();
 					break;
-				case 'd':
+				case 'd': // RECHTS
 					riding = true;
 					turning = true;
 					if(currentSpeed <= 50) setSpeed(50);
 					motorStop();
 					motorRechts();
 					break;
-				case 'x':
+				case 'X': // HARDE STOP
 					riding = false;
 					turning = false;
 					motorStop();
 					break;
-				/*case 'A':
-					motorLinks();
-					vTaskDelay(100);
-					motorStop();
+				case 'x': // ZACHTE STOP
+					riding = true;
+					turning = false;
+					targetSpeed = 0;
 					break;
-				case 'D':
-					motorRechts();
-					vTaskDelay(100);
-					motorStop();
-					break;*/
 				case '+':
 					targetSpeed += 10;
 					if (targetSpeed > 100) targetSpeed = 100;
@@ -258,13 +253,13 @@ void motorTaak(){
 				setSpeed(50);
 			}
 			else if (currentSpeed < targetSpeed){
-				currentSpeed += 5;
+				currentSpeed += 2;
 				if (currentSpeed > 100) currentSpeed = 100;
 				setSpeed(currentSpeed);
 				vTaskDelay(25);
 			}
 			else if(currentSpeed > targetSpeed){
-				currentSpeed -= 5;
+				currentSpeed -= 2;
 				if (currentSpeed < 20) currentSpeed = 20;
 				setSpeed(currentSpeed);
 				vTaskDelay(25);
