@@ -118,7 +118,7 @@ const float _d2r = 3.14159265359f/180.0f;
 float _accelScale;
 float _gyroScale;
 
-int watchdogSonar, watchdogServo, watchdogTemp, watchdogGyro;
+int watchdogSonar, watchdogServo, watchdogTemp, watchdogGyro, watchdogMotor;
 
 //end main stuff
 
@@ -144,7 +144,8 @@ int main()
 	watchdogSonar=0;
 	watchdogServo=0;
 	watchdogTemp=0;
-	//wdt_enable(WDTO_4S);
+	watchdogMotor=0;
+	wdt_enable(WDTO_4S);
 	_accelScale = G * 16.0f/32767.5f;
 	_gyroScale = 2000.0f/32767.5f * _d2r;
 
@@ -155,8 +156,8 @@ int main()
 	xTaskCreate(servoTaak,"Servo Motor",256,NULL,3,NULL);			//code van Joris & Benjamin
 	//xTaskCreate(temperatuurTaak,"temperatuur Sensor",256,NULL,3,NULL);
 	xTaskCreate(gyroTaak,"Gyroscoop Sensor",256,NULL,3,NULL);
-	//xTaskCreate(motorTaak,"Motor Taak met input",256,NULL,3,NULL);
-	xTaskCreate(motorTaak2,"Motor Taak zonder input",256,NULL,3,NULL);
+	xTaskCreate(motorTaak,"Motor Taak met input",256,NULL,3,NULL);
+	//xTaskCreate(motorTaak2,"Motor Taak zonder input",256,NULL,3,NULL);
 	xTaskCreate(watchdogTaak,"watchdog reset",256,NULL,4,NULL);
 
 	vTaskStartScheduler();
@@ -164,8 +165,19 @@ int main()
 
 void motorTaak2(){
 	setSpeed(20);
+	const TickType_t xDelay = 2000 / portTICK_PERIOD_MS;
 	while(1){
-		//motorVooruit();	
+		setSpeed(20);
+		motorVooruit();	
+		vTaskDelay( xDelay );
+		motorAchteruit();
+		vTaskDelay( xDelay );
+		setSpeed(100);
+		motorLinks();
+		vTaskDelay(xDelay);
+		motorRechts();
+		vTaskDelay(xDelay);
+		watchdogMotor = 1;
 	}
 }
 
@@ -177,9 +189,9 @@ void motorTaak(){
 	setSpeed(speed);
 
 	while (1){
-		if (xQueueReceive(motorCommand, &temp, 0)){
-			UART_Transmit(temp);
-			switch(temp){
+		/*if (xQueueReceive(motorCommand, &temp, 0)){
+			UART_Transmit(temp);*/
+			switch(ontvang){
 				case 'w':
 					currentSpeed = 0;
 					setSpeed(currentSpeed);
@@ -226,8 +238,12 @@ void motorTaak(){
 					speed -= 10;
 					if (speed < 0) speed = 0;
 					break;
+				default:
+					//nothing
+					break;	
+				
 			}
-		}
+			ontvang = '0';
 
 		if (riding){
 			if (currentSpeed <= speed){
@@ -238,12 +254,12 @@ void motorTaak(){
 			}
 			else if(currentSpeed >= speed){
 				currentSpeed -= 10;
-				if (currentSpeed < 0)
-				currentSpeed = 0;
+				if (currentSpeed < 20) currentSpeed = 20;
 				setSpeed(currentSpeed);
 				vTaskDelay(25);
 			}
 		}
+		watchdogMotor = 1;
 	}
 }
 
@@ -409,12 +425,13 @@ void servoTaak(){
 void watchdogTaak(){
 	while(1){
 		_delay_ms(1);
-		if(watchdogSonar && watchdogServo && watchdogGyro/*&&watchdogTemp*/){
+		if(watchdogSonar && watchdogServo && watchdogGyro&&watchdogMotor){
 			//UART_Transmit_String("WATCHDOG RESET\n\r");
 			wdt_reset();
 			watchdogSonar = 0;
 			watchdogServo = 0;
 			watchdogGyro = 0;
+			watchdogMotor = 0;
 			//watchdogTemp = 0;
 		}
 	}
@@ -430,7 +447,9 @@ void UART_Init() {
 	UBRR1L = (uint8_t) MYUBRR;
 	UCSR1A = 0x00;
 	UCSR1C = (1<<UCSZ11)|(1<<UCSZ10);
-	UCSR1B = (1 << TXEN1) | (1 << RXEN1);
+	//UCSR1B = (1 << TXEN1) | (1 << RXEN1);
+	UCSR1B = (1 << RXEN1) | (1 << TXEN1) | 
+		(1 << RXCIE1 ) | (1 << UDRIE1);
 }
 
 void UART_Transmit(char ch){
@@ -439,9 +458,10 @@ void UART_Transmit(char ch){
 }
 
 ISR(USART1_RX_vect){
-	//ontvang = UDR1;
-	//UART_Transmit_String("Iets ontvangen\n\r");
-	//xQueueSend(motorCommand, (void*) &UDR1, 0);
+	ontvang = UDR1;
+	//UART_Transmit_String("Iets ontvangen!!!!!\n\r");
+	UART_Transmit(ontvang);
+	//xQueueSend(motorCommand, (void*) &ontvang, 0);
 	//state = RECEIVED_TRUE;
 }
 
@@ -651,6 +671,7 @@ void motorAchteruit()
 	PORTD &= ~(1 << L_MIN);
 	PORTG |= (1 << R_PLUS);
 	PORTC |= (1 << L_PLUS);
+	watchdogMotor = 1;
 }
 
 void motorVooruit()
@@ -659,6 +680,7 @@ void motorVooruit()
 	PORTC &= ~(1 << L_PLUS);
 	PORTL |= (1 << R_MIN);
 	PORTD |= (1 << L_MIN);
+	watchdogMotor = 1;
 }
 
 void motorRechts()
@@ -667,6 +689,7 @@ void motorRechts()
 	PORTG &= ~(1 << R_PLUS);
 	PORTL |= (1 << R_MIN);
 	PORTC |= (1 << L_PLUS);
+	watchdogMotor = 1;
 }
 
 void motorLinks()
@@ -675,6 +698,7 @@ void motorLinks()
 	PORTL &= ~(1 << R_MIN);
 	PORTG |= (1 << R_PLUS);
 	PORTD |= (1 << L_MIN);
+	watchdogMotor = 1;
 }
 
 void motorEnable()
@@ -690,6 +714,7 @@ void motorStop()
 	PORTL &= ~(1 << R_MIN);
 	PORTC &= ~(1 << L_PLUS);
 	PORTD &= ~(1 << L_MIN);
+	watchdogMotor = 1;
 }
 
 void setSpeed(uint8_t speed)
