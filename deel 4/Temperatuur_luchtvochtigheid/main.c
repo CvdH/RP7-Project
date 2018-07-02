@@ -163,21 +163,9 @@ int main()
 }
 
 void motorTaak2(){
-	setSpeed(10);
+	setSpeed(20);
 	while(1){
-		motorStop();
-		PORTL |= (1 << R_MIN);
-		//vTaskDelay(1000);
-		_delay_ms(1000);
-		motorStop();
-		PORTG |= (1 << R_PLUS);
-		_delay_ms(1000);
-		motorStop();
-		PORTD |= (1 << L_MIN);
-		_delay_ms(1000);
-		motorStop();
-		PORTC |= (1 << L_PLUS);
-		_delay_ms(1000);
+		//motorVooruit();	
 	}
 }
 
@@ -657,30 +645,34 @@ void initMotor()
 	motorEnable();
 }
 
-void motorVooruit()
+void motorAchteruit()
 {
-	motorStop();
+	PORTL &= ~(1 << R_MIN);
+	PORTD &= ~(1 << L_MIN);
 	PORTG |= (1 << R_PLUS);
 	PORTC |= (1 << L_PLUS);
 }
 
-void motorAchteruit()
+void motorVooruit()
 {
-	motorStop();
+	PORTG &= ~(1 << R_PLUS);
+	PORTC &= ~(1 << L_PLUS);
 	PORTL |= (1 << R_MIN);
 	PORTD |= (1 << L_MIN);
 }
 
 void motorRechts()
 {
-	motorStop();
+	PORTD &= ~(1 << L_MIN);
+	PORTG &= ~(1 << R_PLUS);
 	PORTL |= (1 << R_MIN);
 	PORTC |= (1 << L_PLUS);
 }
 
 void motorLinks()
 {
-	motorStop();
+	PORTC &= ~(1 << L_PLUS);
+	PORTL &= ~(1 << R_MIN);
 	PORTG |= (1 << R_PLUS);
 	PORTD |= (1 << L_MIN);
 }
