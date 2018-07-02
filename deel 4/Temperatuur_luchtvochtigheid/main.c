@@ -47,6 +47,9 @@
 #define R_MIN PL7
 #define R_EN PL3
 
+
+//pwm pinnen = digital pin 46,44,42,40,38,36 = PL3, PL5, PL7, PG1, PD7, PC1
+
 void INT1_init( void );
 void pulse( void );
 void timer3_init( void );
@@ -123,7 +126,6 @@ int watchdogSonar, watchdogServo, watchdogTemp, watchdogGyro;
 //echo = digital pin 52
 //servo = digital pin 12
 
-
 int main() 
 {
 	sem = xSemaphoreCreateBinary();
@@ -142,7 +144,7 @@ int main()
 	watchdogSonar=0;
 	watchdogServo=0;
 	watchdogTemp=0;
-	wdt_enable(WDTO_4S);
+	//wdt_enable(WDTO_4S);
 	_accelScale = G * 16.0f/32767.5f;
 	_gyroScale = 2000.0f/32767.5f * _d2r;
 
@@ -163,12 +165,19 @@ int main()
 void motorTaak2(){
 	setSpeed(10);
 	while(1){
-		//motorRechts();
-		//motorVooruit();
-		//vTaskDelay(100);
-		//motorLinks();
-		motorAchteruit();
-		//vTaskDelay(100);
+		motorStop();
+		PORTL |= (1 << R_MIN);
+		//vTaskDelay(1000);
+		_delay_ms(1000);
+		motorStop();
+		PORTG |= (1 << R_PLUS);
+		_delay_ms(1000);
+		motorStop();
+		PORTD |= (1 << L_MIN);
+		_delay_ms(1000);
+		motorStop();
+		PORTC |= (1 << L_PLUS);
+		_delay_ms(1000);
 	}
 }
 
@@ -622,6 +631,18 @@ ISR(TIMER1_COMPA_vect)
 //MOTOR STUFF
 void initMotor()
 {
+
+//pwm pinnen = digital pin 46,44,42,40,38,36 = PL3, PL5, PL7, PG1, PD7, PC1
+
+/*
+#define L_PLUS PC1
+#define L_MIN PD7
+#define L_EN PL5 -> pwm
+
+#define R_PLUS PG1
+#define R_MIN PL7
+#define R_EN PL3 -> pwm
+*/
 	DDRC |= (1 << L_PLUS);
 	DDRD |= (1 << L_MIN);
 	DDRL |= (1 << L_EN) | (1 << R_MIN) | (1 << R_EN);
@@ -638,30 +659,35 @@ void initMotor()
 
 void motorVooruit()
 {
+	motorStop();
 	PORTG |= (1 << R_PLUS);
 	PORTC |= (1 << L_PLUS);
 }
 
 void motorAchteruit()
 {
+	motorStop();
 	PORTL |= (1 << R_MIN);
 	PORTD |= (1 << L_MIN);
 }
 
 void motorRechts()
 {
+	motorStop();
 	PORTL |= (1 << R_MIN);
 	PORTC |= (1 << L_PLUS);
 }
 
 void motorLinks()
 {
+	motorStop();
 	PORTG |= (1 << R_PLUS);
 	PORTD |= (1 << L_MIN);
 }
 
 void motorEnable()
 {
+	motorStop();
 	PORTL |= (1 << R_EN);
 	PORTL |= (1 << L_EN);
 }
