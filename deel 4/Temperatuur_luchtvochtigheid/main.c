@@ -183,44 +183,52 @@ void motorTaak2(){
 
 void motorTaak(){
 	uint8_t temp;
-	int16_t speed = 0;
-	int16_t currentSpeed = 0;
+	int16_t targetSpeed = 50;
+	int16_t currentSpeed = 20;
 	bool riding = false;
-	setSpeed(speed);
+	bool turning = false;
+	setSpeed(currentSpeed);
 
 	while (1){
 		/*if (xQueueReceive(motorCommand, &temp, 0)){
 			UART_Transmit(temp);*/
 			switch(ontvang){
 				case 'w':
-					currentSpeed = 0;
+					//currentSpeed = 0;
 					setSpeed(currentSpeed);
 					riding = true;
+					turning = false;
 					motorStop();
 					motorVooruit();
 					break;
 				case 'a':
 					riding = true;
+					turning = true;
+					//if(currentSpeed <= 50) setSpeed(50);
 					motorStop();
 					motorLinks();
 					break;
 				case 's':
-					currentSpeed = 0;
+					//currentSpeed = 0;
 					setSpeed(currentSpeed);
 					riding = true;
+					turning = false;
 					motorStop();
 					motorAchteruit();
 					break;
 				case 'd':
 					riding = true;
+					turning = true;
+					if(currentSpeed <= 50) setSpeed(50);
 					motorStop();
 					motorRechts();
 					break;
 				case 'x':
 					riding = false;
+					turning = false;
 					motorStop();
 					break;
-				case 'A':
+				/*case 'A':
 					motorLinks();
 					vTaskDelay(100);
 					motorStop();
@@ -229,14 +237,14 @@ void motorTaak(){
 					motorRechts();
 					vTaskDelay(100);
 					motorStop();
-					break;
+					break;*/
 				case '+':
-					speed += 10;
-					if (speed > 100) speed = 100;
+					targetSpeed += 10;
+					if (targetSpeed > 100) targetSpeed = 100;
 					break;
 				case '-':
-					speed -= 10;
-					if (speed < 0) speed = 0;
+					targetSpeed -= 10;
+					if (targetSpeed < 0) targetSpeed = 0;
 					break;
 				default:
 					//nothing
@@ -246,15 +254,22 @@ void motorTaak(){
 			ontvang = '0';
 
 		if (riding){
-			if (currentSpeed <= speed){
-				currentSpeed += 10;
+			if (turning){
+				setSpeed(50);
+			}
+			else if (currentSpeed < targetSpeed){
+				currentSpeed += 5;
 				if (currentSpeed > 100) currentSpeed = 100;
 				setSpeed(currentSpeed);
 				vTaskDelay(25);
 			}
-			else if(currentSpeed >= speed){
-				currentSpeed -= 10;
+			else if(currentSpeed > targetSpeed){
+				currentSpeed -= 5;
 				if (currentSpeed < 20) currentSpeed = 20;
+				setSpeed(currentSpeed);
+				vTaskDelay(25);
+			}
+			else{
 				setSpeed(currentSpeed);
 				vTaskDelay(25);
 			}
@@ -460,7 +475,7 @@ void UART_Transmit(char ch){
 ISR(USART1_RX_vect){
 	ontvang = UDR1;
 	//UART_Transmit_String("Iets ontvangen!!!!!\n\r");
-	UART_Transmit(ontvang);
+	//UART_Transmit(ontvang);
 	//xQueueSend(motorCommand, (void*) &ontvang, 0);
 	//state = RECEIVED_TRUE;
 }
