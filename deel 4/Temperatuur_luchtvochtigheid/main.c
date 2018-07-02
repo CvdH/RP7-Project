@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h" 
@@ -37,6 +38,14 @@
 #define INSTR_PER_MS 16000											// instructions per millisecond (depends on MCU clock, 16MHz current)
 #define MAX_RESP_TIME_MS 200										// timeout - max time to wait for low voltage drop
 #define DELAY_BETWEEN_TESTS_MS 50									// echo cancelling time between sampling
+
+#define L_PLUS PC1
+#define L_MIN PD7
+#define L_EN PL5
+
+#define R_PLUS PG1
+#define R_MIN PL7
+#define R_EN PL3
 
 void INT1_init( void );
 void pulse( void );
@@ -58,9 +67,6 @@ volatile unsigned long result = 0;
 //start main stuff
 QueueHandle_t sonarAfstand;
 QueueHandle_t servoHoek;
-//void initQ();
-//void readQ();
-//void writeQ();
 void sonarTaak();
 void servoTaak();
 void temperatuurTaak();
@@ -76,6 +82,19 @@ void initServo();
 void verzenden(uint8_t ad,uint8_t b);
 void ontvangen(uint8_t ad,uint8_t b[],uint8_t max);
 void init_master();
+
+void motorTaak();
+void motorTaak2();
+void initMotor();
+void setSpeed(uint8_t speed);
+void motorVooruit();
+void motorAchteruit();
+void motorRechts();
+void motorLinks();
+void motorEnable();
+void motorStop();
+QueueHandle_t motorCommand;
+char send[20];
 
 SemaphoreHandle_t sem;
 
@@ -111,6 +130,8 @@ int main()
 	xSemaphoreGive(sem);
 	DDRD|= 0x03;
 	DDRB |= (1 << TRIGGER);											// Trigger pin
+	initMotor();
+	motorCommand = xQueueCreate(10, sizeof(uint8_t));
 	UART_Init();
 	INT1_init();
 	timer3_init();
@@ -132,9 +153,101 @@ int main()
 	xTaskCreate(servoTaak,"Servo Motor",256,NULL,3,NULL);			//code van Joris & Benjamin
 	//xTaskCreate(temperatuurTaak,"temperatuur Sensor",256,NULL,3,NULL);
 	xTaskCreate(gyroTaak,"Gyroscoop Sensor",256,NULL,3,NULL);
+	//xTaskCreate(motorTaak,"Motor Taak met input",256,NULL,3,NULL);
+	xTaskCreate(motorTaak2,"Motor Taak zonder input",256,NULL,3,NULL);
 	xTaskCreate(watchdogTaak,"watchdog reset",256,NULL,4,NULL);
 
 	vTaskStartScheduler();
+}
+
+void motorTaak2(){
+	setSpeed(10);
+	while(1){
+		//motorRechts();
+		//motorVooruit();
+		//vTaskDelay(100);
+		//motorLinks();
+		motorAchteruit();
+		//vTaskDelay(100);
+	}
+}
+
+void motorTaak(){
+	uint8_t temp;
+	int16_t speed = 0;
+	int16_t currentSpeed = 0;
+	bool riding = false;
+	setSpeed(speed);
+
+	while (1){
+		if (xQueueReceive(motorCommand, &temp, 0)){
+			UART_Transmit(temp);
+			switch(temp){
+				case 'w':
+					currentSpeed = 0;
+					setSpeed(currentSpeed);
+					riding = true;
+					motorStop();
+					motorVooruit();
+					break;
+				case 'a':
+					riding = true;
+					motorStop();
+					motorLinks();
+					break;
+				case 's':
+					currentSpeed = 0;
+					setSpeed(currentSpeed);
+					riding = true;
+					motorStop();
+					motorAchteruit();
+					break;
+				case 'd':
+					riding = true;
+					motorStop();
+					motorRechts();
+					break;
+				case 'x':
+					riding = false;
+					motorStop();
+					break;
+				case 'A':
+					motorLinks();
+					vTaskDelay(100);
+					motorStop();
+					break;
+				case 'D':
+					motorRechts();
+					vTaskDelay(100);
+					motorStop();
+					break;
+				case '+':
+					speed += 10;
+					if (speed > 100) speed = 100;
+					break;
+				case '-':
+					speed -= 10;
+					if (speed < 0) speed = 0;
+					break;
+			}
+		}
+
+		if (riding){
+			if (currentSpeed <= speed){
+				currentSpeed += 10;
+				if (currentSpeed > 100) currentSpeed = 100;
+				setSpeed(currentSpeed);
+				vTaskDelay(25);
+			}
+			else if(currentSpeed >= speed){
+				currentSpeed -= 10;
+				if (currentSpeed < 0)
+				currentSpeed = 0;
+				setSpeed(currentSpeed);
+				vTaskDelay(25);
+			}
+		}
+	}
 }
 
 void gyroTaak(){
@@ -315,24 +428,6 @@ void wait(unsigned int a){
 		_delay_ms(50);
 }
 
-/*void initQ(){
-	sonarAfstand = xQueueCreate(10,sizeof(int));
-	if(sonarAfstand==0) sonarAfstand = xQueueCreate(10,sizeof(int));
-
-	servoHoek = xQueueCreate(10,sizeof(int));
-	if(servoHoek==0) servoHoek = xQueueCreate(10,sizeof(int));
-}*/
-
-/*void writeQ( int data)
-{
-	xQueueSend(servoHoek, (void*) &hoek, 0);
-}*/
-
-/*void readQ()
-{
-	xQueueReceive(sonarAfstand, &afstand, 0);
-}*/
-
 void UART_Init() {
 	UBRR1H = MYUBRR >> 8;
 	UBRR1L = (uint8_t) MYUBRR;
@@ -347,9 +442,10 @@ void UART_Transmit(char ch){
 }
 
 ISR(USART1_RX_vect){
-	ontvang = UDR1;
-	UART_Transmit(ontvang);
-	state = RECEIVED_TRUE;
+	//ontvang = UDR1;
+	//UART_Transmit_String("Iets ontvangen\n\r");
+	//xQueueSend(motorCommand, (void*) &UDR1, 0);
+	//state = RECEIVED_TRUE;
 }
 
 void UART_Transmit_String(char *string){
@@ -521,4 +617,70 @@ void verzenden(uint8_t ad,uint8_t b) {
 ISR(TIMER1_COMPA_vect)
 {
 	PORTB ^= (1 << PB6);
+}
+
+//MOTOR STUFF
+void initMotor()
+{
+	DDRC |= (1 << L_PLUS);
+	DDRD |= (1 << L_MIN);
+	DDRL |= (1 << L_EN) | (1 << R_MIN) | (1 << R_EN);
+	DDRG |= (1 << R_PLUS);
+
+	TCCR5A = (1 << WGM51) | (1 << COM5A0) | (1 << COM5A1) |
+	(1 << COM5C0) | (1 << COM5C1);
+	TCCR5B = (1 << WGM53) | (1 << CS51);
+	ICR5 = 20000;
+	TCNT5 = 0;
+
+	motorEnable();
+}
+
+void motorVooruit()
+{
+	PORTG |= (1 << R_PLUS);
+	PORTC |= (1 << L_PLUS);
+}
+
+void motorAchteruit()
+{
+	PORTL |= (1 << R_MIN);
+	PORTD |= (1 << L_MIN);
+}
+
+void motorRechts()
+{
+	PORTL |= (1 << R_MIN);
+	PORTC |= (1 << L_PLUS);
+}
+
+void motorLinks()
+{
+	PORTG |= (1 << R_PLUS);
+	PORTD |= (1 << L_MIN);
+}
+
+void motorEnable()
+{
+	PORTL |= (1 << R_EN);
+	PORTL |= (1 << L_EN);
+}
+
+void motorStop()
+{
+	PORTG &= ~(1 << R_PLUS);
+	PORTL &= ~(1 << R_MIN);
+	PORTC &= ~(1 << L_PLUS);
+	PORTD &= ~(1 << L_MIN);
+}
+
+void setSpeed(uint8_t speed)
+{
+	itoa(speed, send, 10);
+	UART_Transmit_String(send);
+	uint16_t newSpeed = 20000 - (20000 / 100 * speed);
+	itoa(newSpeed, send, 10);
+	UART_Transmit_String(send);
+	OCR5A = newSpeed;
+	OCR5C = newSpeed;
 }
