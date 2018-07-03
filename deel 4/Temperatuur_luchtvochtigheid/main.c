@@ -50,7 +50,8 @@
 
 //pwm pinnen = digital pin 46,44,42,40,38,36 = PL3, PL5, PL7, PG1, PD7, PC1
 
-void INT1_init( void );
+void INT0_init( void );
+void INT4_init( void );
 void pulse( void );
 void timer3_init( void );
 
@@ -125,6 +126,7 @@ int watchdogSonar, watchdogServo, watchdogTemp, watchdogGyro, watchdogMotor;
 //trigger = digital pin 53
 //echo = digital pin 52
 //servo = digital pin 12
+// geluid PE4 interrupt 4
 
 int main() 
 {
@@ -135,7 +137,8 @@ int main()
 	initMotor();
 	motorCommand = xQueueCreate(10, sizeof(uint8_t));
 	UART_Init();
-	INT1_init();
+	INT0_init();
+	INT4_init();
 	timer3_init();
 	initServo();
 	sei();
@@ -182,7 +185,7 @@ void motorTaak2(){
 }
 
 void motorTaak(){
-	uint8_t temp;
+	//uint8_t temp;
 	int16_t targetSpeed = 50;
 	int16_t currentSpeed = 20;
 	bool riding = false;
@@ -231,7 +234,7 @@ void motorTaak(){
 				case 'x': // ZACHTE STOP
 					riding = true;
 					turning = false;
-					targetSpeed = 0;
+					targetSpeed = 20;
 					break;
 				case '+':
 					targetSpeed += 10;
@@ -239,7 +242,7 @@ void motorTaak(){
 					break;
 				case '-':
 					targetSpeed -= 10;
-					if (targetSpeed < 0) targetSpeed = 0;
+					if (targetSpeed < 20) targetSpeed = 20;
 					break;
 				default:
 					//nothing
@@ -291,7 +294,8 @@ void gyroTaak(){
 		ontvangen(0x68, data, 1);
 		waardeL = data[0];
 		waarde = ((uint16_t)waardeH<<8) | waardeL;
-		gyroX = waarde * _gyroScale - 69;
+		//gyroX = waarde * _gyroScale - 69;
+		gyroX = waarde;
 
 		//gyro Y
 		verzenden(0x68, 0x3D);
@@ -301,7 +305,7 @@ void gyroTaak(){
 		ontvangen(0x68, data, 1);
 		waardeL = data[0];
 		waarde = ((uint16_t)waardeH<<8) | waardeL;
-		gyroY = waarde * _gyroScale;
+		gyroY = waarde;
 
 		// gyro Z
 		verzenden(0x68, 0x3F);
@@ -311,7 +315,8 @@ void gyroTaak(){
 		ontvangen(0x68, data, 1);
 		waardeL = data[0];
 		waarde = ((uint16_t)waardeH<<8) | waardeL;
-		gyroZ = waarde * _gyroScale - 16;
+		//gyroZ = waarde * _gyroScale - 16;
+		gyroZ = waarde;
 
 		//accel X
 		verzenden(0x68, 0x43);
@@ -321,7 +326,7 @@ void gyroTaak(){
 		ontvangen(0x68, data, 1);
 		waardeL = data[0];
 		waarde = ((uint16_t)waardeH<<8) | waardeL;
-		accelX = waarde * _accelScale;
+		accelX = waarde; /* _accelScale;*/
 		
 		//accel Y
 		verzenden(0x68, 0x45);
@@ -331,7 +336,7 @@ void gyroTaak(){
 		ontvangen(0x68, data, 1);
 		waardeL = data[0];
 		waarde = ((uint16_t)waardeH<<8) | waardeL;
-		accelY = waarde * _accelScale;
+		accelY = waarde;
 
 		//accel Z
 		verzenden(0x68, 0x47);
@@ -341,7 +346,8 @@ void gyroTaak(){
 		ontvangen(0x68, data, 1);
 		waardeL = data[0];
 		waarde = ((uint16_t)waardeH<<8) | waardeL;
-		accelZ = waarde * _accelScale - 313;
+		//accelZ = waarde * _accelScale - 313;
+		accelZ = waarde;
 
 		//temp
 		/*verzenden(0x68, 0x41);
@@ -488,7 +494,7 @@ void UART_Transmit_Integer(uint32_t number){
 
 //Sonar functions
 
-void INT1_init()
+void INT0_init()
 {
 	PCICR |= (1<<PCIE0);
 	PCMSK0 |= (1<<PCINT1);
@@ -545,6 +551,18 @@ ISR(TIMER3_OVF_vect)
 			result = -1;
 		}
 	}
+}
+
+void INT4_init(){
+	EICRB &= ~(1 << ISC40);
+	EICRB |= (1 << ISC41);
+	EIMSK |= (1 << INT4);
+}
+
+ISR(INT4_vect){
+	ontvang = 'X';
+	motorStop();
+	//UART_Transmit_String("Sound!!\n\r");
 }
 
 void turnServo(uint8_t degrees)
@@ -729,11 +747,11 @@ void motorStop()
 
 void setSpeed(uint8_t speed)
 {
-	itoa(speed, send, 10);
-	UART_Transmit_String(send);
+	//itoa(speed, send, 10);
+	//UART_Transmit_String(send);
 	uint16_t newSpeed = 20000 - (20000 / 100 * speed);
-	itoa(newSpeed, send, 10);
-	UART_Transmit_String(send);
+	//itoa(newSpeed, send, 10);
+	//UART_Transmit_String(send);
 	OCR5A = newSpeed;
 	OCR5C = newSpeed;
 }
