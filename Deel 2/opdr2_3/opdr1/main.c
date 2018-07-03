@@ -261,10 +261,10 @@ ISR(TIMER3_OVF_vect)
 
 void turnServo(uint8_t degrees)
 {
-	OCR1B = 20000 - (degrees * (1300 / 180) + 800);
+	OCR1A = 20000 - (degrees * (1300 / 180) + 800);
 }
 
-void initServo()
+/*void initServo()
 {
 	DDRB |= (1 << PB6);
 	TCCR1A = (1 << WGM11)| (1 << COM1B0) | (1 << COM1B1);
@@ -277,5 +277,19 @@ void initServo()
 
 ISR(TIMER1_COMPA_vect)
 {
-	PORTB ^= (1 << PB6);
+	PORTA ^= (1 << PA7);
+}*/
+
+void initServo()
+{
+	TCCR1A |= (1 << WGM11);
+	TCCR1B |= (1 << CS11) | (1 << WGM13);
+	ICR1 = 20000;
+	OCR1A = 18500;
+	TIMSK1 |= (1 << 1);
+}
+
+ISR(TIMER1_COMPA_vect)
+{
+	PORTA ^= (1 << PA7);
 }
