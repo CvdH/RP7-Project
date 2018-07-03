@@ -265,7 +265,7 @@ void turnServo(uint8_t degrees)
 }
 
 /*void initServo()
-{
+{*
 	DDRB |= (1 << PB6);
 	TCCR1A = (1 << WGM11)| (1 << COM1B0) | (1 << COM1B1);
 	TCCR1B = (1 << WGM13) | (1 << CS11);
