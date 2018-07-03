@@ -5,6 +5,8 @@
  * Author : Tulp
  */
 
+ //fix queues
+
  //#ifndef F_CPU
  #define F_CPU 16000000UL
  //#endif
@@ -65,6 +67,8 @@ void sonarTaak();
 void servoTaak();
 void temperatuurTaak();
 void watchdogTaak();
+void testTaak();
+void printTaak();
 void UART_Init();
 void UART_Transmit(char data );
 void UART_Transmit_String(char *stringPtr);
@@ -78,12 +82,16 @@ void init_master();
 
 SemaphoreHandle_t sem;
 
-int afstand;
-int hoek;
-int temperatuur;
-int humidity;
+//int afstand;
+//int hoek;
+//int temperatuur;
+//int humidity;
+QueueHandle_t afstandQueue;
+QueueHandle_t hoekQueue;
+QueueHandle_t temperatuurQueue;
+QueueHandle_t humidityQueue;
 
-int watchdogSonar, watchdogServo, watchdogTemp;
+volatile int watchdogSonar, watchdogServo, watchdogTemp;
 
 //end main stuff
 
@@ -112,14 +120,22 @@ int main()
 	// Replace with your application code
 //	UART_Transmit('a');
 	UART_Transmit_String("setup done\n\r");
-	xTaskCreate(sonarTaak,"Sonar Sensor",256,NULL,3,NULL);			//lees sonar sensor uit en schrijf afstand naar sonar queue
-	xTaskCreate(servoTaak,"Servo Motor",256,NULL,3,NULL);			//code van Joris & Benjamin
-	xTaskCreate(temperatuurTaak,"temperatuur Sensor",256,NULL,3,NULL);
-	xTaskCreate(watchdogTaak,"watchdog reset",256,NULL,4,NULL);
+	xTaskCreate(sonarTaak,"Sonar Sensor",256,NULL,1,NULL);			//lees sonar sensor uit en schrijf afstand naar sonar queue
+	xTaskCreate(servoTaak,"Servo Motor",256,NULL,1,NULL);			//code van Joris & Benjamin
+	xTaskCreate(temperatuurTaak,"Temperatuur Sensor",256,NULL,1,NULL);
+	xTaskCreate(printTaak,"Print Taak",256,NULL,1,NULL);
+	//xTaskCreate(testTaak,"temperatuur Sensor",256,NULL,3,NULL);
+	xTaskCreate(watchdogTaak,"Watchdog Reset",256,NULL,2,NULL);
 
 	vTaskStartScheduler();
 }
 
+void testTaak(){
+	while(1) {
+	DDRA =0xFF;
+
+	}
+}
 
 void temperatuurTaak(){
 
@@ -132,14 +148,16 @@ void temperatuurTaak(){
 		
 		waarde = ((uint16_t)data[0]<<8) | data[1];
 		
-		temperatuur=((175.72*waarde)/65536.0) -46.85;
+		int temperatuur=((175.72*waarde)/65536.0) -46.85;
+		xQueueSend(temperatuurQueue, (void*) &temperatuur, 0);
 
 		verzenden(0x40, 0xE5);
 		ontvangen(0x40, data, 2);
 		
 		waarde = ((uint16_t)data[0]<<8) | data[1];
 		
-		humidity=((125*waarde)/65536.0) -6;
+		int humidity=((125*waarde)/65536.0) -6;
+		xQueueSend(humidityQueue, (void*) &humidity, 0);
 
 		watchdogTemp = 1;
 	}
@@ -155,7 +173,8 @@ void sonarTaak(){
 			//xSemaphoreTake(sem, portMAX_DELAY);
 			_delay_ms(DELAY_BETWEEN_TESTS_MS);
 			pulse();
-			afstand = result;
+			//afstand = result;
+			xQueueSend(afstandQueue, (void*) &result, 0);
 			//xQueueSend(sonarAfstand, (void*) &result,0);
 			//UART_Transmit_Integer(afstand);UART_Transmit_String("\n\r");
 			//wdt_reset();
@@ -166,14 +185,16 @@ void sonarTaak(){
 	}
 }
 
+void printTaak(){
+	int hoek;
+	int afstand;
+	int temperatuur;
+	int humidity;
 
-void servoTaak(){
 	while(1){
-		for(int i=0;i<8;i++){
-			//xSemaphoreTake(sem, portMAX_DELAY);
-			hoek = i*(250/9);
-			turnServo(hoek);
-			_delay_ms(250);
+		if(xQueueReceive(afstandQueue, &afstand, 0)==pdTRUE && xQueueReceive(hoekQueue, &hoek, 0)==pdTRUE
+		&& xQueueReceive(temperatuurQueue, &temperatuur, 0)==pdTRUE && xQueueReceive(humidityQueue, &humidity, 0)==pdTRUE){
+
 			UART_Transmit_String("hoek: ");
 			UART_Transmit_Integer(hoek);
 			UART_Transmit_String(" afstand: ");
@@ -183,6 +204,20 @@ void servoTaak(){
 			UART_Transmit_String(" humidity: ");
 			UART_Transmit_Integer(humidity);
 			UART_Transmit_String("\n\r");
+		}
+	}
+}
+
+void servoTaak(){
+	while(1){
+		for(int i=0;i<8;i++){
+			//xSemaphoreTake(sem, portMAX_DELAY);
+			int hoek = i*(250/9);
+			turnServo(hoek);
+			xQueueSend(hoekQueue, (void*) &hoek, 0);
+			//_delay_ms(250);
+			vTaskDelay(500 / portTICK_PERIOD_MS);
+			
 			//xSemaphoreGive(sem);
 			//_delay_ms(5000);
 			watchdogServo = 1;
@@ -193,7 +228,8 @@ void servoTaak(){
 
 void watchdogTaak(){
 	while(1){
-		_delay_ms(1);
+		//_delay_ms(1);
+		vTaskDelay( 1000 / portTICK_PERIOD_MS);
 		if(watchdogSonar&&watchdogServo&&watchdogTemp){
 			//UART_Transmit_String("WATCHDOG RESET\n\r");
 			wdt_reset();
@@ -212,14 +248,20 @@ void wait(unsigned int a)
 
 //main functions
 void initQ(){
-	sonarAfstand = xQueueCreate(10,sizeof(int));
-	if(sonarAfstand==0) sonarAfstand = xQueueCreate(10,sizeof(int));
+	afstandQueue = xQueueCreate(10,sizeof(int));
+	if(afstandQueue==0) afstandQueue = xQueueCreate(10,sizeof(int));
 
-	servoHoek = xQueueCreate(10,sizeof(int));
-	if(servoHoek==0) servoHoek = xQueueCreate(10,sizeof(int));
+	hoekQueue = xQueueCreate(10,sizeof(int));
+	if(hoekQueue==0) hoekQueue = xQueueCreate(10,sizeof(int));
+
+	temperatuurQueue = xQueueCreate(10,sizeof(int));
+	if(temperatuurQueue==0) temperatuurQueue = xQueueCreate(10,sizeof(int));
+
+	humidityQueue = xQueueCreate(10,sizeof(int));
+	if(humidityQueue==0) humidityQueue = xQueueCreate(10,sizeof(int));
 }
 
-void writeQ( int data)
+/*void writeQ( int data)
 {
 	xQueueSend(servoHoek, (void*) &hoek, 0);
 }
@@ -227,7 +269,7 @@ void writeQ( int data)
 void readQ()
 {
 	xQueueReceive(sonarAfstand, &afstand, 0);
-}
+}*/
 
 void UART_Init() {
 
